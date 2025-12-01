@@ -1,39 +1,25 @@
 import streamlit as st
-import pandas as pd
 from apputil import *
 
-# Load Titanic dataset
+# Load Titanic dataset (you already do this)
 df = pd.read_csv('https://raw.githubusercontent.com/leontoddjohnson/datasets/main/data/titanic.csv')
 
-st.title("Titanic Data Visualizations")
+st.write("# Titanic Visualization 1")
+st.write("**Question:** Did women in first class have a higher survival rate than men in other classes?")
 
-st.write(
-'''
-# Titanic Visualization 1
-"Question: How does the survival rate vary across passenger class, sex, and age group on the Titanic?"
-'''
-)
-summary_df = survival_demographics(df)
-fig1 = visualize_demographic(summary_df)
+fig1 = visualize_demographic(df)
 st.plotly_chart(fig1, use_container_width=True)
 
 
-st.write(
-'''
-# Titanic Visualization 2
-"Question: How does family size relate to the average ticket fare across different passenger classes?"
-'''
-)
-family_df = family_groups(df)
-fig2 = visualize_families(family_df)
+st.write("# Titanic Visualization 2")
+st.write("**Question:** How does average ticket fare vary with family size across passenger classes?")
+
+fig2 = visualize_families(df)
 st.plotly_chart(fig2, use_container_width=True)
 
 
-st.write(
-'''
-# Titanic Visualization Bonus
-'''
-)
-# Generate and display the figure
-fig3 = visualize_family_size()
+st.write("# Titanic Visualization Bonus")
+st.write("**Question (bonus):** How does survival rate change with family size?")
+
+fig3 = visualize_family_size(df)
 st.plotly_chart(fig3, use_container_width=True)
