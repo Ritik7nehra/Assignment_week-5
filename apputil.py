@@ -1,177 +1,200 @@
 import plotly.express as px
 import pandas as pd
 
-# Function to analyze survival demographics
-def survival_demographics(df: pd.DataFrame) -> pd.DataFrame:
+# update/add code below ...
+_TITANIC_URL = "https://raw.githubusercontent.com/leontoddjohnson/datasets/main/data/titanic.csv"
+
+# ---------- for autograder ----------
+def _ensure_df(df=None) -> pd.DataFrame:
+    """If they don't have df, then loading original Titanic dataset。"""
+    if df is None:
+        return pd.read_csv(_TITANIC_URL)
+    return df
+
+def _find_col(df: pd.DataFrame, *cands: str) -> str:
+    """Return the first existing column name (case-insensitive)."""
+    for c in cands:
+        if c in df.columns:
+            return c
+    low = {c.lower(): c for c in df.columns}
+    for c in cands:
+        if c.lower() in low:
+            return low[c.lower()]
+    raise KeyError(f"None of {cands} found in columns: {list(df.columns)}")
+
+
+# ---------- 1) Exercise 1 ----------
+def survival_demographics(df=None) -> pd.DataFrame:
     """
-    Analyze survival patterns on the Titanic by class, sex, and age group.
-
-    Parameters:
-        df (pd.DataFrame): Titanic dataset containing at least 'Age', 'Pclass', 'Sex', 'Survived'.
-
-    Returns:
-        pd.DataFrame: Summary table with Pclass, Sex, AgeGroup, n_passengers, n_survivors, survival_rate
+    return Pclass, Sex, age_group:
+    - n_passengers: total number of passengers
+    - n_survivors: number of survivors
+    - survival_rate: survival rate
     """
+    df = _ensure_df(df)
 
-    # Step 1: Create age categories
-    age_bins = [0, 12, 19, 59, float('inf')]
-    age_labels = ['Child', 'Teen', 'Adult', 'Senior']
-    df['AgeGroup'] = pd.cut(df['Age'], bins=age_bins, labels=age_labels, right=True)
+    age_col      = _find_col(df, "Age", "age")
+    pclass_col   = _find_col(df, "Pclass", "pclass")
+    sex_col      = _find_col(df, "Sex", "sex")
+    survived_col = _find_col(df, "Survived", "survived")
+    pid_col      = _find_col(df, "PassengerId", "passengerid")
 
-    # Drop rows with missing AgeGroup (due to missing Age)
-    df = df.dropna(subset=['AgeGroup'])
+    # create age group（Child/Teen/Adult/Senior）
+    bins   = [0, 12, 19, 59, 200]
+    labels = ["Child", "Teen", "Adult", "Senior"]
+    age_group = pd.cut(
+        df[age_col],
+        bins=bins,
+        labels=labels,
+        include_lowest=True,
+        right=True,
+    )
+    tmp = df.assign(age_group=age_group)
 
-    # Step 2: Group by class, sex, and age group
-    group_cols = ['Pclass', 'Sex', 'AgeGroup']
-    grouped = df.groupby(group_cols)
+    # group by class, sez, age_group
+    out = (
+        tmp.groupby([pclass_col, sex_col, "age_group"], observed=False)
+           .agg(
+               n_passengers=(pid_col, "count"),
+               n_survivors=(survived_col, "sum"),
+           )
+           .reset_index()
+    )
+    out["survival_rate"] = out["n_survivors"] / out["n_passengers"]
+    out["age_group"] = out["age_group"].astype(
+        pd.CategoricalDtype(categories=labels, ordered=True)
+    )
+    # rename columns for autograder
+    out = out.rename(columns={pclass_col: "pclass", sex_col: "sex"})
+    out = out.sort_values(["pclass", "sex", "age_group"])
 
-    # Step 3: Aggregate total passengers and survivors
-    result = grouped['Survived'].agg(
-        n_passengers='count',
-        n_survivors='sum'
-    ).reset_index()
-
-    # Step 4: Calculate survival rate
-    result['survival_rate'] = result['n_survivors'] / result['n_passengers']
-
-    # Step 5: Sort for readability
-    result = result.sort_values(by=['Pclass', 'Sex', 'AgeGroup'])
-
-    return result
+    return out[["pclass", "sex", "age_group", "n_passengers", "n_survivors", "survival_rate"]]
 
 
-# Function to visualize demographic summary
-def visualize_demographic(summary_df: pd.DataFrame):
+
+def visualize_demographic(table: pd.DataFrame, question_text: str | None = None):
     """
-    Create a Plotly bar chart showing survival rates across
-    passenger class, sex, and age group.
-
-    Parameters:
-        summary_df (pd.DataFrame): Output of survival_demographics()
-
-    Returns:
-        plotly.graph_objs._figure.Figure: A Plotly Figure object
+    Visualize survival rate by age group, sex, pclass
+    Expects the OUTPUT schema from survival_demographics (lower-case)
     """
+    facet_col = "pclass" if "pclass" in table.columns else "Pclass"
+    color_col = "sex"    if "sex"    in table.columns else "Sex"
+
     fig = px.bar(
-        summary_df,
-        x="Pclass",
+        table,
+        x="age_group",
         y="survival_rate",
-        color="AgeGroup",
+        color=color_col,
+        facet_col=facet_col,
         barmode="group",
-        facet_col="Sex",
-        category_orders={
-            "Pclass": [1, 2, 3],
-            "AgeGroup": ['Child', 'Teen', 'Adult', 'Senior'],
-            "Sex": ["male", "female"]
-        },
+        category_orders={"age_group": ["Child", "Teen", "Adult", "Senior"]},
         labels={
-            "Pclass": "Passenger Class",
-            "survival_rate": "Survival Rate",
-            "AgeGroup": "Age Group"
+            "age_group": "Age group",
+            "survival_rate": "Survival rate",
+            facet_col: "Class",
+            color_col: "Sex",
         },
-        title="Survival Rate by Class, Sex, and Age Group"
+        title=question_text or "Survival Rate by Age Group, Sex, and Class",
     )
-
-    fig.update_layout(
-        yaxis=dict(tickformat=".0%"),
-        legend_title_text='Age Group',
-        height=500,
-        template="plotly_white"
-    )
-
+    fig.update_yaxes(tickformat=".0%")
     return fig
 
 
-# Function to analyze family groups
-def family_groups(df: pd.DataFrame) -> pd.DataFrame:
+# ---------- 2) Exercise 2 ----------
+def family_groups(df: pd.DataFrame | None = None) -> pd.DataFrame:
     """
-    Adds a family_size column, groups by family size and class,
-    and computes fare statistics.
-
-    Parameters:
-        df (pd.DataFrame): Titanic dataset
-
-    Returns:
-        pd.DataFrame: Grouped summary with passenger count and fare stats
+    create family_size = SibSp + Parch + 1, group by (family_size, pclass)
+    Return (lower-case pclass in OUTPUT):
+      family_size, pclass, n_passengers, avg_fare, min_fare, max_fare
     """
+    #df = df.copy() # avoid modifying original df
+    df = _ensure_df(df).copy()
 
-    # Ensure necessary columns are present
-    required_cols = ['SibSp', 'Parch', 'Pclass', 'Fare']
-    for col in required_cols:
-        if col not in df.columns:
-            raise ValueError(f"DataFrame must contain '{col}' column.")
-        
-    # Step 1: Add family_size = SibSp + Parch + 1 (self)
-    df['family_size'] = df['SibSp'] + df['Parch'] + 1
+    sibsp_col  = _find_col(df, "SibSp", "sibsp")
+    parch_col  = _find_col(df, "Parch", "parch")
+    pclass_col = _find_col(df, "Pclass", "pclass")
+    fare_col   = _find_col(df, "Fare", "fare")
+    pid_col    = _find_col(df, "PassengerId", "passengerid")
 
-    # Step 2: Group by family size and class
-    grouped = df.groupby(['family_size', 'Pclass'])
+    df["family_size"] = df[sibsp_col] + df[parch_col] + 1
 
-    # Step 3: Aggregate values
-    result = grouped['Fare'].agg(
-        n_passengers='count',
-        avg_fare='mean',
-        min_fare='min',
-        max_fare='max'
-    ).reset_index()
-
-    # Step 4: Sort for readability
-    result = result.sort_values(by=['Pclass', 'family_size'])
-
-    return result
+    out = (
+        df.groupby(["family_size", pclass_col], observed=False)
+        .agg(
+            n_passengers=(pid_col, "count"),
+            avg_fare=(fare_col, "mean"),
+            min_fare=(fare_col, "min"),
+            max_fare=(fare_col, "max"),
+        )
+        .reset_index()
+    )
+    out = out.rename(columns={pclass_col: "pclass"})
+    out = out.sort_values(["pclass", "family_size"])
+    return out
 
 
-# Function to extract and count last names
-def last_names(df: pd.DataFrame) -> pd.Series:
+def last_names(df=None) -> pd.Series:
     """
-    Extracts last names from Name column and counts frequency.
-
-    Parameters:
-        df (pd.DataFrame): Titanic dataset
-
-    Returns:
-        pd.Series: Last name as index, count as values
+    get family name then return value_counts Series
+    index=last_name, value=count
     """
+    df = _ensure_df(df)
 
-    # Extract last name before comma in Name
-    df['LastName'] = df['Name'].apply(lambda name: name.split(',')[0].strip())
+    name_col = _find_col(df, "Name", "name")
+    last = df[name_col].str.split(",", n=1).str[0].str.strip()
+    return last.value_counts()
 
-    # Count last names
-    last_name_counts = df['LastName'].value_counts()
-
-    return last_name_counts
-
-
-# Visualization function for family groups
-def visualize_families(family_df: pd.DataFrame):
-    """
-    Create a Plotly line chart showing the relationship between
-    family size and average fare, broken down by passenger class.
-
-    Parameters:
-        family_df (pd.DataFrame): Output from family_groups()
-
-    Returns:
-        plotly.graph_objs._figure.Figure: A Plotly Figure
-    """
+def visualize_families(table: pd.DataFrame, question_text: str | None = None):
     fig = px.line(
-        family_df,
+        table,
         x="family_size",
         y="avg_fare",
-        color="Pclass",
+        color="pclass",
         markers=True,
-        labels={
-            "family_size": "Family Size",
-            "avg_fare": "Average Fare",
-            "Pclass": "Passenger Class"
-        },
-        title="Average Fare by Family Size and Passenger Class"
+        title=question_text or "Average Fare by Family Size and Class",
     )
+    return fig
 
-    fig.update_layout(
-        template="plotly_white",
-        hovermode="x unified",
-        legend_title_text='Class',
-        height=500
+# bonus
+def visualize_family_size(df: pd.DataFrame | None = None):
+    """
+    family_size
+    """
+    df = _ensure_df(df).copy()
+
+    sibsp_col = _find_col(df, "SibSp", "sibsp")
+    parch_col = _find_col(df, "Parch", "parch")
+    df["family_size"] = df[sibsp_col] + df[parch_col] + 1
+    g = df["family_size"].value_counts().sort_index().reset_index()
+    g.columns = ["family_size", "n_passengers"]
+    return px.bar(g, x="family_size", y="n_passengers", title="Passenger Count by Family Size")
+
+
+def determine_age_division(df=None) -> pd.DataFrame:
+    """
+    create a new boolean 'older_passenger' to mark passengers older than the median age.
+    """
+    df = _ensure_df(df).copy()
+
+    age_col = _find_col(df, "Age", "age")
+    median_age = df[age_col].median()
+    df["older_passenger"] = df[age_col] > median_age
+    return df
+
+def visualize_age_division(df: pd.DataFrame):
+    """
+    Compatible with either 'Pclass'/'pclass' and 'Survived'/'survived'
+    """
+
+    x_col = "Pclass" if "Pclass" in df.columns else _find_col(df, "pclass", "Pclass")
+    y_col = "Survived" if "Survived" in df.columns else _find_col(df, "survived", "Survived")
+
+    fig = px.bar(
+        df,
+        x=x_col,
+        y=y_col,
+        color="older_passenger",
+        barmode="group",
+        title="Survival by Passenger Class and Age Division",
     )
     return fig
